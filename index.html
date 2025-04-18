@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cutprogo010 - Video Splitter</title>
+  <link rel="icon" href="favicon.png" type="image/png">
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#000000" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #111;
+      color: #fff;
+      text-align: center;
+    }
+    header {
+      padding: 1rem;
+      background: #222;
+      font-size: 1.5rem;
+    }
+    input, button, select {
+      margin: 10px;
+      padding: 10px;
+      font-size: 1rem;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+    }
+    footer {
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <header>cutprogo010 - Video Splitter</header>
+  <div class="container">
+    <p>Select a video file (up to 3–4 hours in length):</p>
+    <input type="file" id="videoInput" accept="video/*" />
+    <p>Number of parts to split into:</p>
+    <input type="number" id="parts" min="1" max="500" value="5" />
+    <br />
+    <button onclick="splitVideo()">Split Video</button>
+    <p id="status"></p>
+  </div>
+  <footer>
+    <a href="privacy.html" style="color:#aaa">Privacy Policy</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.4/dist/ffmpeg.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: true });
+
+    async function splitVideo() {
+      const file = document.getElementById("videoInput").files[0];
+      const parts = parseInt(document.getElementById("parts").value);
+      if (!file || parts < 1) return alert("Please select a file and valid number of parts.");
+
+      const status = document.getElementById("status");
+      status.innerText = "Loading FFmpeg...";
+      if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+      const fileName = file.name.split(".")[0];
+      ffmpeg.FS("writeFile", file.name, await fetchFile(file));
+
+      status.innerText = "Getting video duration...";
+      const probe = await ffmpeg.run("-i", file.name);
+      const match = probe.match(/Duration: (\\d+):(\\d+):(\\d+.\\d+)/);
+      if (!match) return alert("Unable to read video duration.");
+      const duration = (+match[1]) * 3600 + (+match[2]) * 60 + (+match[3]);
+      const splitLength = duration / parts;
+
+      const zip = new JSZip();
+
+      status.innerText = `Splitting into ${parts} parts...`;
+      for (let i = 0; i < parts; i++) {
+        const start = i * splitLength;
+        const output = `part_${i + 1}.mp4`;
+        await ffmpeg.run(
+          "-ss", String(start),
+          "-i", file.name,
+          "-t", String(splitLength),
+          "-c", "copy",
+          output
+        );
+        const data = ffmpeg.FS("readFile", output);
+        zip.file(output, data);
+      }
+
+      status.innerText = "Creating ZIP file...";
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${fileName}_parts.zip`;
+      a.click();
+      status.innerText = "Done! ZIP file ready for download.";
+    }
+  </script>
+</body>
+</html>
